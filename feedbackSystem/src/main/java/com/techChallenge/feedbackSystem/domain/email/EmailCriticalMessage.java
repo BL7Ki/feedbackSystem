@@ -1,4 +1,4 @@
-package com.techChallenge.feedbackSystem.domain.report;
+package com.techChallenge.feedbackSystem.domain.email;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -9,12 +9,10 @@ import java.time.LocalDateTime;
 
 @Getter
 @Setter
-@AllArgsConstructor
 @NoArgsConstructor
-public class Report {
+@AllArgsConstructor
+public class EmailCriticalMessage {
     private String description;
     private boolean urgent;
     private LocalDateTime sentAt;
-    private long evaluationsPerDay;
-    private long evaluationsPerUrgency;
 }
