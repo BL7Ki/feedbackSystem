@@ -9,50 +9,61 @@ Globals:
     Timeout: 10
 
 Resources:
-    # 1. Tabela DynamoDB para Armazenamento de Feedback
+  # 1. Tabela DynamoDB
   FeedbackTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: FeedbackTable
-
       BillingMode: PAY_PER_REQUEST
-
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
         - AttributeName: createdAt
           AttributeType: S
-
       KeySchema:
         - AttributeName: id
           KeyType: HASH
-
       GlobalSecondaryIndexes:
         - IndexName: CreatedAtIndex
           KeySchema:
             - AttributeName: createdAt
               KeyType: HASH
           Projection:
-            ProjectionType: ALL # Para ler todos os dados (nota, descrição)
+            ProjectionType: ALL
 
-  # 2. Fila SQS para Processamento Assíncrono
+  # 2. Fila SQS
   FeedbackQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: FeedbackProcessingQueue
+      VisibilityTimeout: 90
 
-  # 3. Lambda 1: Ingestão de Feedback (API Gateway)
+  # 3. Tópico SNS (para alertas)
+  AlertSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: CriticalFeedbackAlertTopic
+
+  # 4. Bucket S3 (para armazenar relatórios)
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "feedback-reports-${AWS::Region}-${AWS::AccountId}"
+
+  # --- LAMBDA 1: INGESTÃO (API GATEWAY) ---
   FeedbackIngestorFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: target/feedback-system-lambda.jar # Assumindo o nome do JAR do shade plugin
-      Handler: com.techChallenge.feedbackSystem.FeedbackHandler::handleRequest
+      CodeUri: target/feedback-system-lambda.jar
+      Handler: com.techChallenge.feedbackSystem.function.feedback.FeedbackIngestor::ingestFeedback
       Policies:
-        # Permissões Mínimas
         - DynamoDBCrudPolicy:
             TableName: !Ref FeedbackTable
         - SQSSendMessagePolicy:
             QueueName: !GetAtt FeedbackQueue.QueueName
+      Environment:
+        Variables:
+          AWS_SQS_QUEUEURL: !Ref FeedbackQueue
       Events:
         ApiEvent:
           Type: Api
@@ -60,4 +71,44 @@ Resources:
             Path: /avaliacao
             Method: post
 
-  # ... (Adicionar Lambda 2 e Lambda 3 a seguir)
+  # --- LAMBDA 2: PROCESSAMENTO (SQS) ---
+  NotificationProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: target/feedback-system-lambda.jar
+      Handler: com.techChallenge.feedbackSystem.function.notification.NotificationProcessor::processNotifications
+      Policies:
+        # Acesso para publicar no Tópico SNS
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AlertSNSTopic.TopicName
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt FeedbackQueue.Arn # Aciona a função quando há mensagens
+            BatchSize: 10 # Processa 10 mensagens por vez (ajustável)
+
+  # --- LAMBDA 3: RELATÓRIO (EVENTBRIDGE) ---
+  WeeklyReporterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: target/feedback-system-lambda.jar
+      Handler: com.techChallenge.feedbackSystem.function.report.WeeklyReporter::generateReport
+      MemorySize: 1024 # Aumentar a memória para operações de leitura/cálculo
+      Timeout: 90 # Mais tempo para ler o DDB e formatar
+      Policies:
+        # Acesso de leitura ao DynamoDB (para o relatório)
+        - DynamoDBReadPolicy:
+            TableName: !Ref FeedbackTable
+        # Acesso para salvar o arquivo no S3
+        - S3WritePolicy:
+            BucketName: !Ref ReportsBucket
+        # Acesso para enviar o relatório por e-mail (SES)
+        - SESCrudPolicy:
+            IdentityName: "your-verified-email-domain.com" # Exige um domínio verificado no SES
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            # Roda todo domingo à meia-noite (UTC).
+            Schedule: cron(0 0 ? * SUN *)
