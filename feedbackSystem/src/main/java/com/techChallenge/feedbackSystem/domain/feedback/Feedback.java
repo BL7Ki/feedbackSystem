@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @NoArgsConstructor
 public class Feedback {
-    private Long id;
+    private String id; // dynamoDB primary key eh String
     private String description;
     private int rating;
     private LocalDateTime createdAt;

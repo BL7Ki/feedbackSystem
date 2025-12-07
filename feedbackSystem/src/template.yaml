@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: Feedback System Serverless Architecture
+
+Globals:
+  Function:
+    Runtime: java21
+    MemorySize: 512
+    Timeout: 10
+
+Resources:
+    # 1. Tabela DynamoDB para Armazenamento de Feedback
+  FeedbackTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: FeedbackTable
+
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+      GlobalSecondaryIndexes:
+        - IndexName: CreatedAtIndex
+          KeySchema:
+            - AttributeName: createdAt
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL # Para ler todos os dados (nota, descrição)
+
+  # 2. Fila SQS para Processamento Assíncrono
+  FeedbackQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: FeedbackProcessingQueue
+
+  # 3. Lambda 1: Ingestão de Feedback (API Gateway)
+  FeedbackIngestorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: target/feedback-system-lambda.jar # Assumindo o nome do JAR do shade plugin
+      Handler: com.techChallenge.feedbackSystem.FeedbackHandler::handleRequest
+      Policies:
+        # Permissões Mínimas
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FeedbackTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt FeedbackQueue.QueueName
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /avaliacao
+            Method: post
+
+  # ... (Adicionar Lambda 2 e Lambda 3 a seguir)
