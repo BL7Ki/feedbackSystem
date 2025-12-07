@@ -1,4 +1,4 @@
-package com.techChallenge.feedbackSystem.domain.email;
+package com.techChallenge.feedbackSystem.domain.notification;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;

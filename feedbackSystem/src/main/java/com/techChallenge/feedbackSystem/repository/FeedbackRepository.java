@@ -4,10 +4,10 @@ import com.techChallenge.feedbackSystem.domain.feedback.Feedback;
 import org.springframework.stereotype.Repository;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
+import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 
-import java.time.LocalDateTime;
-import java.util.List;
+import java.util.Optional;
 
 @Repository
 public class FeedbackRepository {
@@ -15,7 +15,6 @@ public class FeedbackRepository {
     private final DynamoDbTable<Feedback> feedbackTable;
 
     public FeedbackRepository(DynamoDbEnhancedClient enhancedClient) {
-        // 'FeedbackTable' é o nome da tabela no AWS SAM/Terraform
         this.feedbackTable = enhancedClient.table("FeedbackTable", TableSchema.fromBean(Feedback.class));
     }
 
@@ -24,10 +23,15 @@ public class FeedbackRepository {
         return feedback;
     }
 
-    // Iremos precisar de um método para buscar dados para o Lambda 3 (Relatórios)
-    // Ex: Listar todos os feedbacks de uma data range
-    public List<Feedback> findByDateRange(LocalDateTime start, LocalDateTime end) {
-        // Implementar consulta usando Query/Scan ou GSI do DynamoDB
-        return List.of();
+    public Optional<Feedback> findById(String id) {
+        Key key = Key.builder().partitionValue(id).build();
+        Feedback feedback = feedbackTable.getItem(r -> r.key(key));
+
+        return Optional.ofNullable(feedback);
+    }
+
+    public Optional<Feedback> findByDateRange(String startDate, String endDate) {
+        // Implementação futura para buscar feedbacks em um intervalo de datas
+        return Optional.empty();
     }
 }
