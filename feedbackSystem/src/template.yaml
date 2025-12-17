@@ -9,7 +9,7 @@ Globals:
     Timeout: 10
 
 Resources:
-  # 1. Tabela DynamoDB
+  # 1. Tabela DynamoDB para Armazenamento de Feedback
   FeedbackTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -29,40 +29,42 @@ Resources:
             - AttributeName: createdAt
               KeyType: HASH
           Projection:
-            ProjectionType: ALL
+            ProjectionType: ALL # Para permitir a leitura de todos os dados no relatório
 
-  # 2. Fila SQS
+  # 2. Fila SQS para Processamento Assíncrono
   FeedbackQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: FeedbackProcessingQueue
       VisibilityTimeout: 90
 
-  # 3. Tópico SNS (para alertas)
+  # 3. Tópico SNS para Alertas Críticos
   AlertSNSTopic:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: CriticalFeedbackAlertTopic
 
-  # 4. Bucket S3 (para armazenar relatórios)
+  # 4. Bucket S3 para Armazenamento de Relatórios
   ReportsBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub "feedback-reports-${AWS::Region}-${AWS::AccountId}"
 
-  # --- LAMBDA 1: INGESTÃO (API GATEWAY) ---
+  # --- LAMBDA 1: INGESTÃO DE FEEDBACK (API GATEWAY) ---
   FeedbackIngestorFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: target/feedback-system-lambda.jar
       Handler: com.techChallenge.feedbackSystem.function.feedback.FeedbackIngestor::ingestFeedback
       Policies:
+        # Permissões Mínimas: Escrever no DynamoDB e Enviar para o SQS
         - DynamoDBCrudPolicy:
             TableName: !Ref FeedbackTable
         - SQSSendMessagePolicy:
             QueueName: !GetAtt FeedbackQueue.QueueName
       Environment:
         Variables:
+          # Para injetar em @Value("${aws.sqs.queueUrl}") no FeedbackService
           AWS_SQS_QUEUEURL: !Ref FeedbackQueue
       Events:
         ApiEvent:
@@ -71,44 +73,54 @@ Resources:
             Path: /avaliacao
             Method: post
 
-  # --- LAMBDA 2: PROCESSAMENTO (SQS) ---
+  # --- LAMBDA 2: PROCESSAMENTO DE NOTIFICAÇÃO (SQS) ---
   NotificationProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: target/feedback-system-lambda.jar
       Handler: com.techChallenge.feedbackSystem.function.notification.NotificationProcessor::processNotifications
       Policies:
-        # Acesso para publicar no Tópico SNS
+        # Permissões: Ler no DynamoDB (para obter dados completos) e Publicar no SNS
+        - DynamoDBReadPolicy:
+            TableName: !Ref FeedbackTable
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt AlertSNSTopic.TopicName
+      Environment:
+        Variables:
+          # Para injetar em @Value("${aws.sns.criticalTopicArn}")
+          AWS_SNS_CRITICALTOPICARN: !Ref AlertSNSTopic
       Events:
         SQSEvent:
           Type: SQS
           Properties:
-            Queue: !GetAtt FeedbackQueue.Arn # Aciona a função quando há mensagens
-            BatchSize: 10 # Processa 10 mensagens por vez (ajustável)
+            Queue: !GetAtt FeedbackQueue.Arn
+            BatchSize: 10
 
-  # --- LAMBDA 3: RELATÓRIO (EVENTBRIDGE) ---
+  # --- LAMBDA 3: RELATÓRIO SEMANAL (EVENTBRIDGE) ---
   WeeklyReporterFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: target/feedback-system-lambda.jar
       Handler: com.techChallenge.feedbackSystem.function.report.WeeklyReporter::generateReport
-      MemorySize: 1024 # Aumentar a memória para operações de leitura/cálculo
-      Timeout: 90 # Mais tempo para ler o DDB e formatar
+      MemorySize: 1024 # Aumentado para operações de leitura e S3/SES
+      Timeout: 90
       Policies:
-        # Acesso de leitura ao DynamoDB (para o relatório)
+        # Permissões: Ler no DynamoDB, Escrever no S3 e Enviar via SES
         - DynamoDBReadPolicy:
             TableName: !Ref FeedbackTable
-        # Acesso para salvar o arquivo no S3
         - S3WritePolicy:
             BucketName: !Ref ReportsBucket
-        # Acesso para enviar o relatório por e-mail (SES)
         - SESCrudPolicy:
-            IdentityName: "your-verified-email-domain.com" # Exige um domínio verificado no SES
+            IdentityName: "leoventura245@gmail.com"
+      Environment:
+        Variables:
+          # Para injetar em @Value("${aws.s3.reportsBucketName}")
+          AWS_S3_REPORTSBUCKETNAME: !Ref ReportsBucket
+          # Para injetar em @Value("${aws.ses.reportRecipientEmail}")
+          AWS_SES_REPORTRECIPIENTEMAIL: "leoventura245@gmail.com"
       Events:
         Schedule:
           Type: Schedule
           Properties:
-            # Roda todo domingo à meia-noite (UTC).
+            # Roda todo domingo à meia-noite (UTC)
             Schedule: cron(0 0 ? * SUN *)
