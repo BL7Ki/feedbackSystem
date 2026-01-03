@@ -1,15 +1,23 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: 'AWS::Serverless-2016-10-31'
-Description: Feedback System Serverless Architecture
+Description: >
+  Feedback System - Tech Challenge
 
 Globals:
   Function:
     Runtime: java21
     MemorySize: 512
-    Timeout: 10
+    Timeout: 30 # Aumentado para suportar o cold start do Spring
+    Environment:
+      Variables:
+        AWS_REGION_CONFIG: !Ref "AWS::Region"
+        # O Spring Cloud Function usa essa variável para saber qual Bean executar
+        MAIN_CLASS: com.techChallenge.feedbackSystem.FeedbackSystemApplication
 
 Resources:
-  # 1. Tabela DynamoDB para Armazenamento de Feedback
+
+  # --- INFRAESTRUTURA: ARMAZENAMENTO E MENSAGERIA ---
+
   FeedbackTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -29,42 +37,41 @@ Resources:
             - AttributeName: createdAt
               KeyType: HASH
           Projection:
-            ProjectionType: ALL # Para permitir a leitura de todos os dados no relatório
+            ProjectionType: ALL
 
-  # 2. Fila SQS para Processamento Assíncrono
   FeedbackQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: FeedbackProcessingQueue
-      VisibilityTimeout: 90
+      VisibilityTimeout: 90 # Deve ser maior que o timeout da Lambda de notificação
 
-  # 3. Tópico SNS para Alertas Críticos
   AlertSNSTopic:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: CriticalFeedbackAlertTopic
 
-  # 4. Bucket S3 para Armazenamento de Relatórios
   ReportsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "feedback-reports-${AWS::Region}-${AWS::AccountId}"
+      # Nome único baseado no Account ID para evitar conflitos globais
+      BucketName: !Sub "feedback-reports-${AWS::AccountId}-${AWS::Region}"
 
-  # --- LAMBDA 1: INGESTÃO DE FEEDBACK (API GATEWAY) ---
+  # --- LAMBDAS (FUNCTIONS) ---
+
+  # 1. Ingestão: Recebe via API Gateway e salva no DynamoDB
   FeedbackIngestorFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: target/feedback-system-lambda.jar
-      Handler: com.techChallenge.feedbackSystem.function.feedback.FeedbackIngestor::ingestFeedback
+      CodeUri: .
+      Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
       Policies:
-        # Permissões Mínimas: Escrever no DynamoDB e Enviar para o SQS
         - DynamoDBCrudPolicy:
             TableName: !Ref FeedbackTable
         - SQSSendMessagePolicy:
             QueueName: !GetAtt FeedbackQueue.QueueName
       Environment:
         Variables:
-          # Para injetar em @Value("${aws.sqs.queueUrl}") no FeedbackService
+          SPRING_CLOUD_FUNCTION_DEFINITION: ingestFeedback
           AWS_SQS_QUEUEURL: !Ref FeedbackQueue
       Events:
         ApiEvent:
@@ -73,21 +80,20 @@ Resources:
             Path: /avaliacao
             Method: post
 
-  # --- LAMBDA 2: PROCESSAMENTO DE NOTIFICAÇÃO (SQS) ---
+  # 2. Notificação: Processa mensagens da fila e avisa via SNS se for crítico
   NotificationProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: target/feedback-system-lambda.jar
-      Handler: com.techChallenge.feedbackSystem.function.notification.NotificationProcessor::processNotifications
+      CodeUri: .
+      Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
       Policies:
-        # Permissões: Ler no DynamoDB (para obter dados completos) e Publicar no SNS
         - DynamoDBReadPolicy:
             TableName: !Ref FeedbackTable
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt AlertSNSTopic.TopicName
       Environment:
         Variables:
-          # Para injetar em @Value("${aws.sns.criticalTopicArn}")
+          SPRING_CLOUD_FUNCTION_DEFINITION: processNotifications
           AWS_SNS_CRITICALTOPICARN: !Ref AlertSNSTopic
       Events:
         SQSEvent:
@@ -96,16 +102,15 @@ Resources:
             Queue: !GetAtt FeedbackQueue.Arn
             BatchSize: 10
 
-  # --- LAMBDA 3: RELATÓRIO SEMANAL (EVENTBRIDGE) ---
+  # 3. Relatório: Agendado para rodar semanalmente
   WeeklyReporterFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: target/feedback-system-lambda.jar
-      Handler: com.techChallenge.feedbackSystem.function.report.WeeklyReporter::generateReport
-      MemorySize: 1024 # Aumentado para operações de leitura e S3/SES
-      Timeout: 90
+      CodeUri: .
+      Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
+      MemorySize: 1024
+      Timeout: 60
       Policies:
-        # Permissões: Ler no DynamoDB, Escrever no S3 e Enviar via SES
         - DynamoDBReadPolicy:
             TableName: !Ref FeedbackTable
         - S3WritePolicy:
@@ -114,13 +119,20 @@ Resources:
             IdentityName: "leoventura245@gmail.com"
       Environment:
         Variables:
-          # Para injetar em @Value("${aws.s3.reportsBucketName}")
+          SPRING_CLOUD_FUNCTION_DEFINITION: generateReport
           AWS_S3_REPORTSBUCKETNAME: !Ref ReportsBucket
-          # Para injetar em @Value("${aws.ses.reportRecipientEmail}")
           AWS_SES_REPORTRECIPIENTEMAIL: "leoventura245@gmail.com"
       Events:
         Schedule:
           Type: Schedule
           Properties:
-            # Roda todo domingo à meia-noite (UTC)
             Schedule: cron(0 0 ? * SUN *)
+
+# --- SAÍDAS (OUTPUTS) ---
+Outputs:
+  FeedbackApi:
+    Description: "URL do endpoint de ingestão de feedback"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/avaliacao"
+  ReportsBucketName:
+    Description: "Nome do Bucket onde os relatórios são salvos"
+    Value: !Ref ReportsBucket

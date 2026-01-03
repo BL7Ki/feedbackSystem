@@ -9,8 +9,6 @@ import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.enhanced.dynamodb.Expression;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,19 +34,12 @@ public class FeedbackRepository {
         return Optional.ofNullable(feedback);
     }
 
-    /**
-     * Busca feedbacks em um intervalo de datas usando o GSI (Scan com filtro indexado).
-     */
-    public List<Feedback> findByDateRange(LocalDateTime start, LocalDateTime end) {
+    public List<Feedback> findByDateRange(String start, String end) {
         String indexName = "CreatedAtIndex";
 
-        DateTimeFormatter fmt = DateTimeFormatter.ISO_DATE_TIME;
-        String startString = start.format(fmt);
-        String endString = end.format(fmt);
-
         Map<String, AttributeValue> expressionValues = new HashMap<>();
-        expressionValues.put(":start", AttributeValue.builder().s(startString).build());
-        expressionValues.put(":end", AttributeValue.builder().s(endString).build());
+        expressionValues.put(":start", AttributeValue.builder().s(start).build());
+        expressionValues.put(":end", AttributeValue.builder().s(end).build());
 
         Map<String, String> expressionNames = new HashMap<>();
         expressionNames.put("#createdAt", "createdAt");

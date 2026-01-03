@@ -10,9 +10,11 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.ses.SesClient;
 import software.amazon.awssdk.services.ses.model.*;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class ReportService {
@@ -38,8 +40,8 @@ public class ReportService {
     }
 
     public void generateWeeklyReport() {
-        LocalDateTime end = LocalDateTime.now();
-        LocalDateTime start = end.minusDays(7);
+        String end = Instant.now().toString();
+        String start = Instant.now().minus(7, ChronoUnit.DAYS).toString();
 
         List<Feedback> feedbacks = repository.findByDateRange(start, end);
 
@@ -48,27 +50,33 @@ public class ReportService {
                 .average()
                 .orElse(0.0);
 
-        String reportContent = formatReport(feedbacks.size(), avgRating, start, end);
+        Map<String, Long> countByUrgency = feedbacks.stream()
+                .collect(Collectors.groupingBy(Feedback::getUrgency, Collectors.counting()));
 
-        String key = String.format("reports/%s_weekly_report.txt", start.toLocalDate());
+        String reportContent = formatReport(feedbacks.size(), avgRating, countByUrgency, start, end);
+
+        String key = String.format("reports/%s_weekly_report.txt", start.substring(0, 10));
         saveReportToS3(key, reportContent);
 
         sendEmailNotification(avgRating, feedbacks.size(), key);
     }
 
-    private String formatReport(int total, double avgRating, LocalDateTime start, LocalDateTime end) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-        return String.format(
-                "Relatório Semanal de Feedback\n" +
-                        "Período: %s a %s\n" +
-                        "----------------------------------------\n" +
-                        "Total de Feedbacks Recebidos: %d\n" +
-                        "Média de Avaliações: %.2f\n" +
-                        "Status: %s",
-                start.format(formatter), end.format(formatter),
-                total, avgRating,
-                (avgRating < 7.0) ? " ATENÇÃO: Média abaixo da meta (7.0)" : " Média dentro da meta"
+    private String formatReport(int total, double avgRating, Map<String, Long> urgencyMap, String start, String end) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Relatório Semanal de Feedback\n");
+        sb.append(String.format("Período: %s a %s\n", start, end));
+        sb.append("----------------------------------------\n");
+        sb.append(String.format("Total de Feedbacks Recebidos: %d\n", total));
+        sb.append(String.format("Média de Avaliações: %.2f\n", avgRating));
+
+        sb.append("\nDistribuição por Urgência:\n");
+        urgencyMap.forEach((urgency, count) ->
+                sb.append(String.format("- %s: %d\n", urgency, count))
         );
+
+        sb.append("\nStatus: ").append((avgRating < 7.0) ? "ATENÇÃO: Média abaixo da meta" : "Média dentro da meta");
+
+        return sb.toString();
     }
 
     private void saveReportToS3(String key, String content) {
@@ -79,28 +87,25 @@ public class ReportService {
                 .build();
 
         s3Client.putObject(putObjectRequest, RequestBody.fromString(content));
-        System.out.println("Relatório salvo no S3: s3://" + bucketName + "/" + key);
     }
 
     private void sendEmailNotification(double avgRating, int total, String s3Key) {
         String subject = String.format("Relatório Semanal de Feedback - Média: %.2f", avgRating);
         String bodyText = String.format(
-                "O relatório semanal foi gerado.\nTotal de Feedbacks: %d\nMédia: %.2f\n" +
-                        "O relatório completo está disponível em: s3://%s/%s",
-                total, avgRating, bucketName, s3Key
+                "O relatório semanal foi gerado com sucesso.\n\n" +
+                        "Total de Feedbacks: %d\n" +
+                        "Média: %.2f\n" +
+                        "O relatório completo está disponível no S3: %s",
+                total, avgRating, s3Key
         );
 
-        Destination destination = Destination.builder().toAddresses(recipientEmail).build();
-        Content content = Content.builder().data(bodyText).build();
-        Body body = Body.builder().text(content).build();
-        Message message = Message.builder().subject(Content.builder().data(subject).build()).body(body).build();
-
-        SendEmailRequest sendEmailRequest = SendEmailRequest.builder()
+        sesClient.sendEmail(SendEmailRequest.builder()
                 .source(SENDER_EMAIL)
-                .destination(destination)
-                .message(message)
-                .build();
-
-        sesClient.sendEmail(sendEmailRequest);
+                .destination(Destination.builder().toAddresses(recipientEmail).build())
+                .message(Message.builder()
+                        .subject(Content.builder().data(subject).build())
+                        .body(Body.builder().text(Content.builder().data(bodyText).build()).build())
+                        .build())
+                .build());
     }
 }

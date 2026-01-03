@@ -5,14 +5,12 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 public class EmailCriticalMessage {
     private String description;
-    private boolean urgent;
-    private LocalDateTime sentAt;
+    private String urgency;
+    private String sentAt;
 }

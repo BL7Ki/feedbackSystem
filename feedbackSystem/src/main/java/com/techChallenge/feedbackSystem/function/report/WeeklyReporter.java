@@ -4,6 +4,8 @@ import com.techChallenge.feedbackSystem.service.report.ReportService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 
+import java.util.function.Consumer;
+
 @Component
 public class WeeklyReporter {
 
@@ -13,12 +15,12 @@ public class WeeklyReporter {
         this.reportService = reportService;
     }
 
-    /**
-     * O Bean Runnable é usado para tarefas agendadas (EventBridge/Scheduler).
-     * Ele é acionado no agendamento e simplesmente executa a lógica do Service.
-     */
     @Bean
-    public Runnable generateReport() {
-        return reportService::generateWeeklyReport;
+    public Consumer<Object> generateReport() {
+        return event -> {
+            System.out.println("Evento de agendamento recebido: " + event);
+            reportService.generateWeeklyReport();
+            System.out.println("Relatório semanal gerado com sucesso.");
+        };
     }
 }

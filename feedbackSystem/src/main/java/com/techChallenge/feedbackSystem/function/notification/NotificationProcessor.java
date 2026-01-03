@@ -24,15 +24,20 @@ public class NotificationProcessor {
     @Bean
     public Consumer<SQSEvent> processNotifications() {
         return event -> {
+            if (event.getRecords() == null) return;
+
             for (SQSMessage sqsMessage : event.getRecords()) {
                 try {
+                    System.out.println("Processando mensagem ID: " + sqsMessage.getMessageId());
+
                     String body = sqsMessage.getBody();
                     FeedbackMessageDTO messageDto = objectMapper.readValue(body, FeedbackMessageDTO.class);
+
                     notificationService.processMessage(messageDto);
 
                 } catch (Exception e) {
-                    System.err.println("Erro ao processar mensagem SQS: " + e.getMessage());
-                    throw new RuntimeException("Falha no processamento", e);
+                    System.err.println("Erro crítico no processamento do SQS: " + e.getMessage());
+                    throw new RuntimeException("Erro ao processar registro SQS", e);
                 }
             }
         };
