@@ -10,10 +10,12 @@ Globals:
     Timeout: 30 # Aumentado para suportar o cold start do Spring
     Environment:
       Variables:
-        AWS_REGION_CONFIG: !Ref "AWS::Region"
-        # O Spring Cloud Function usa essa variável para saber qual Bean executar
         MAIN_CLASS: com.techChallenge.feedbackSystem.FeedbackSystemApplication
+        AWS_REGION_CONFIG: !Ref "AWS::Region"
+        AWS_SQS_QUEUEURL: !Ref FeedbackQueue
         AWS_SNS_CRITICALTOPICARN: !Ref AlertSNSTopic
+        AWS_S3_REPORTSBUCKETNAME: !Ref ReportsBucket
+        AWS_SES_REPORTRECIPIENTEMAIL: "leoventura245@gmail.com"
 
 Resources:
 
@@ -44,7 +46,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: FeedbackProcessingQueue
-      VisibilityTimeout: 90 # Deve ser maior que o timeout da Lambda de notificação
+      VisibilityTimeout: 90
 
   AlertSNSTopic:
     Type: AWS::SNS::Topic
@@ -54,7 +56,6 @@ Resources:
   ReportsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      # Nome único baseado no Account ID para evitar conflitos globais
       BucketName: !Sub "feedback-reports-${AWS::AccountId}-${AWS::Region}"
 
   # --- LAMBDAS (FUNCTIONS) ---
@@ -73,7 +74,6 @@ Resources:
       Environment:
         Variables:
           SPRING_CLOUD_FUNCTION_DEFINITION: ingestFeedback
-          AWS_SQS_QUEUEURL: !Ref FeedbackQueue
       Events:
         ApiEvent:
           Type: Api
@@ -95,7 +95,6 @@ Resources:
       Environment:
         Variables:
           SPRING_CLOUD_FUNCTION_DEFINITION: processNotifications
-          AWS_SNS_CRITICALTOPICARN: !Ref AlertSNSTopic
       Events:
         SQSEvent:
           Type: SQS
@@ -121,8 +120,6 @@ Resources:
       Environment:
         Variables:
           SPRING_CLOUD_FUNCTION_DEFINITION: generateReport
-          AWS_S3_REPORTSBUCKETNAME: !Ref ReportsBucket
-          AWS_SES_REPORTRECIPIENTEMAIL: "leoventura245@gmail.com"
       Events:
         Schedule:
           Type: Schedule
