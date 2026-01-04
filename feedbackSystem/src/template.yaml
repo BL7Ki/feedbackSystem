@@ -13,6 +13,7 @@ Globals:
         AWS_REGION_CONFIG: !Ref "AWS::Region"
         # O Spring Cloud Function usa essa variável para saber qual Bean executar
         MAIN_CLASS: com.techChallenge.feedbackSystem.FeedbackSystemApplication
+        AWS_SNS_CRITICALTOPICARN: !Ref AlertSNSTopic
 
 Resources:
 
@@ -62,7 +63,7 @@ Resources:
   FeedbackIngestorFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: .
+      CodeUri: ../target/feedback-system-lambda.jar
       Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
       Policies:
         - DynamoDBCrudPolicy:
@@ -84,7 +85,7 @@ Resources:
   NotificationProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: .
+      CodeUri: ../target/feedback-system-lambda.jar
       Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
       Policies:
         - DynamoDBReadPolicy:
@@ -106,7 +107,7 @@ Resources:
   WeeklyReporterFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: .
+      CodeUri: ../target/feedback-system-lambda.jar
       Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
       MemorySize: 1024
       Timeout: 60

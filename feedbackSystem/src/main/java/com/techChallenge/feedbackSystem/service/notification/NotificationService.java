@@ -15,7 +15,7 @@ public class NotificationService {
     private final FeedbackRepository repository;
     private final SnsClient snsClient;
 
-    @Value("${aws.sns.criticalTopicArn}")
+    @Value("${AWS_SNS_CRITICALTOPICARN:}")
     private String criticalTopicArn;
 
     public NotificationService(FeedbackRepository repository, SnsClient snsClient) {
