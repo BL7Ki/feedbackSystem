@@ -7,8 +7,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.sns.SnsClient;
 
-import java.time.Instant;
-
 @Service
 public class NotificationService {
 
@@ -24,30 +22,54 @@ public class NotificationService {
     }
 
     public void processMessage(FeedbackMessageDTO message) {
-        Feedback feedback = repository.findById(message.getFeedbackId())
-                .orElseThrow(() -> new RuntimeException("Feedback não encontrado: " + message.getFeedbackId()));
+        try {
+            if (message == null || message.getFeedbackId() == null || message.getFeedbackId().trim().isEmpty()) {
+                System.err.println("AVISO: Recebida mensagem com feedbackId nulo ou vazio. Descartando mensagem.");
+                return;
+            }
 
-        if ("CRITICO".equals(feedback.getUrgency()) || feedback.getRating() <= 3) {
+            String feedbackId = message.getFeedbackId();
+            System.out.println("Iniciando busca no DynamoDB para o ID: " + feedbackId);
 
-            String alertMessage = String.format(
-                    "ALERTA DE FEEDBACK CRÍTICO\n" +
-                            "--------------------------\n" +
-                            "ID: %s\n" +
-                            "Descrição: %s\n" +
-                            "Nota: %d\n" +
-                            "Data: %s",
-                    feedback.getId(),
-                    feedback.getDescription(),
-                    feedback.getRating(),
-                    feedback.getCreatedAt());
+            Feedback feedback = repository.findById(feedbackId).orElse(null);
 
-            snsClient.publish(builder -> builder
-                    .topicArn(criticalTopicArn)
-                    .subject("Urgência: Feedback Crítico Recebido")
-                    .message(alertMessage)
-            );
+            if (feedback == null) {
+                System.err.println("ERRO: Feedback não encontrado no DynamoDB para o ID: " + feedbackId);
+                return;
+            }
 
-            System.out.println("Notificação crítica enviada para o tópico SNS: " + feedback.getId());
+            if ("CRITICO".equals(feedback.getUrgency()) || feedback.getRating() <= 3) {
+
+                System.out.println("Nota crítica detectada (" + feedback.getRating() + "). Preparando disparo de SNS...");
+
+                String alertMessage = String.format(
+                        "ALERTA DE FEEDBACK CRÍTICO\n" +
+                                "--------------------------\n" +
+                                "ID: %s\n" +
+                                "Descrição: %s\n" +
+                                "Nota: %d\n" +
+                                "Urgência: %s\n" +
+                                "Data: %s",
+                        feedback.getId(),
+                        feedback.getDescription(),
+                        feedback.getRating(),
+                        feedback.getUrgency(),
+                        feedback.getCreatedAt());
+
+                snsClient.publish(builder -> builder
+                        .topicArn(criticalTopicArn)
+                        .subject("Urgência: Feedback Crítico Recebido")
+                        .message(alertMessage)
+                );
+
+                System.out.println("Sucesso: Notificação enviada para o tópico SNS para o feedback: " + feedback.getId());
+            } else {
+                System.out.println("Feedback processado: Nota " + feedback.getRating() + " não exige notificação.");
+            }
+
+        } catch (Exception e) {
+            System.err.println("Erro crítico ao processar notificação: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 }
