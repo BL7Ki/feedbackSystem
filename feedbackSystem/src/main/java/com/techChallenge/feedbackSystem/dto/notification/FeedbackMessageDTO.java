@@ -7,6 +7,6 @@ import lombok.Setter;
 @Getter
 @Setter
 public class FeedbackMessageDTO {
-    @JsonProperty("idFeedback")
+    @JsonProperty("feedbackId")
     private String feedbackId;
 }
