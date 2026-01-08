@@ -30,8 +30,8 @@ public class ReportService {
             FeedbackRepository repository,
             S3Client s3Client,
             SesClient sesClient,
-            @Value("${aws.s3.reportsBucketName}") String bucketName,
-            @Value("${aws.ses.reportRecipientEmail}") String recipientEmail) {
+            @Value("${AWS_S3_REPORTSBUCKETNAME}") String bucketName,
+            @Value("${AWS_SES_REPORTRECIPIENTEMAIL}") String recipientEmail) {
         this.repository = repository;
         this.s3Client = s3Client;
         this.sesClient = sesClient;
