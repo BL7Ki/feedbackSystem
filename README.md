@@ -97,12 +97,12 @@ curl -X POST https://j0t1vd2np9.execute-api.us-east-1.amazonaws.com/Prod/avaliac
 
 ### 4.3 Verificação de Logs
 
-Para acompanhar o processamento em tempo real(usar cd src/ antes de executar o comando abaixo):
+Para acompanhar o processamento em tempo real:
 
 ```bash
 sam logs --stack-name feedback-system --tail
 ```
-
+Usar cd src/ antes de executar o comando acima.
 ---
 
 ## 5. Documentação das Funções
@@ -132,9 +132,22 @@ O EventBridge só é acionado de domingo. Sendo assim, caso seja necessário for
 
 ```bash
 aws lambda invoke \
---function-name WeeklyReporterFunction \
---payload '{}' \
-response.json
+  --function-name feedback-system-WeeklyReporterFunction-0McK1jxSBOVR \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{}' \
+  response.json
+```
+
+Após isso, é possível ver o relatório no S3 utilizando o comando abaixo:
+
+```bash
+aws s3 ls s3://feedback-reports-183366578375-us-east-1/reports/
+```
+
+É possível ler o conteúdo do relatório:
+
+```bash
+aws s3 cp s3://feedback-reports-183366578375-us-east-1/reports/SUA_DATA_weekly_report.txt .
 ```
 ---
 
