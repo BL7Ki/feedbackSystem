@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: >
+  Feedback System - Tech Challenge
+
+Globals:
+  Function:
+    Runtime: java21
+    MemorySize: 512
+    Timeout: 30 # Aumentado para suportar o cold start do Spring
+    Environment:
+      Variables:
+        MAIN_CLASS: com.techChallenge.feedbackSystem.FeedbackSystemApplication
+        AWS_REGION_CONFIG: !Ref "AWS::Region"
+        AWS_SQS_QUEUEURL: !Ref FeedbackQueue
+        AWS_SNS_CRITICALTOPICARN: !Ref AlertSNSTopic
+        AWS_S3_REPORTSBUCKETNAME: !Ref ReportsBucket
+        AWS_SES_REPORTRECIPIENTEMAIL: "leoventura245@gmail.com"
+
+Resources:
+
+  # --- INFRAESTRUTURA: ARMAZENAMENTO E MENSAGERIA ---
+
+  FeedbackTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: FeedbackTable
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: CreatedAtIndex
+          KeySchema:
+            - AttributeName: createdAt
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  FeedbackQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: FeedbackProcessingQueue
+      VisibilityTimeout: 90
+
+  AlertSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: CriticalFeedbackAlertTopic
+
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "feedback-reports-${AWS::AccountId}-${AWS::Region}"
+
+  # --- LAMBDAS (FUNCTIONS) ---
+
+  # 1. Ingestão: Recebe via API Gateway e salva no DynamoDB
+  FeedbackIngestorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../target/feedback-system-lambda.jar
+      Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FeedbackTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt FeedbackQueue.QueueName
+      Environment:
+        Variables:
+          SPRING_CLOUD_FUNCTION_DEFINITION: ingestFeedback
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /avaliacao
+            Method: post
+
+  # 2. Notificação: Processa mensagens da fila e avisa via SNS se for crítico
+  NotificationProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../target/feedback-system-lambda.jar
+      Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref FeedbackTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AlertSNSTopic.TopicName
+      Environment:
+        Variables:
+          SPRING_CLOUD_FUNCTION_DEFINITION: processNotifications
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt FeedbackQueue.Arn
+            BatchSize: 10
+
+  # 3. Relatório: Agendado para rodar semanalmente
+  WeeklyReporterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../target/feedback-system-lambda.jar
+      Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
+      MemorySize: 1024
+      Timeout: 60
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref FeedbackTable
+        - S3WritePolicy:
+            BucketName: !Ref ReportsBucket
+        - SESCrudPolicy:
+            IdentityName: "leoventura245@gmail.com"
+      Environment:
+        Variables:
+          SPRING_CLOUD_FUNCTION_DEFINITION: generateReport
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 0 ? * SUN *)
+
+# --- SAÍDAS (OUTPUTS) ---
+Outputs:
+  FeedbackApi:
+    Description: "URL do endpoint de ingestão de feedback"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/avaliacao"
+  ReportsBucketName:
+    Description: "Nome do Bucket onde os relatórios são salvos"
+    Value: !Ref ReportsBucket
