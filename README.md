@@ -5,7 +5,11 @@
 - Wagner de Lima Braga Silva - RM364223
 - Everton Cristiano de Souza Teixeira - RM362065
 
-## 1.1 Link Repositorio:
+## 1.1 Link do Video:
+
+https://youtu.be/Q3q6dlJkrLE
+
+## 1.2 Link Repositorio:
 branch: Main
 ```
 https://github.com/BL7Ki/feedbackSystem
