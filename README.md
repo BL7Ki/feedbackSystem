@@ -148,6 +148,7 @@ E por último, para conseguirmos ler o conteúdo de um arquivo sem precisar baix
 aws s3 cp s3://feedback-reports-183366578375-us-east-1/reports/NOME_DO_ARQUIVO.txt -
 ```
 O traço - no final do comando é o que faz o conteúdo ser impresso na tela (Standard Output) em vez de ser salvo em um arquivo local.
+
 ---
 
 ## 6. Documentação das Funções
