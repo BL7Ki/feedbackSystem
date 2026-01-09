@@ -127,6 +127,27 @@ Para acompanhar o processamento em tempo real:
 sam logs --stack-name feedback-system --tail
 ```
 
+### 5.4 Verificação do Bucket S3
+
+Com este comando, é possível ver os buckets existentes na conta.
+
+```bash
+aws s3 ls
+```
+
+Para listar os arquivos de um bucket específico:
+
+```bash
+aws s3 ls s3://feedback-reports-183366578375-us-east-1 --recursive
+``` 
+O --recursive garante que ele mostre arquivos dentro de pastas (como a nossa pasta /reports).
+
+E por último, para conseguirmos ler o conteúdo de um arquivo sem precisar baixar:
+
+```bash
+aws s3 cp s3://feedback-reports-183366578375-us-east-1/reports/NOME_DO_ARQUIVO.txt -
+```
+O traço - no final do comando é o que faz o conteúdo ser impresso na tela (Standard Output) em vez de ser salvo em um arquivo local.
 ---
 
 ## 6. Documentação das Funções
